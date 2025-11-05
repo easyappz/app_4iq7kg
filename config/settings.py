@@ -28,6 +28,14 @@ DEBUG = os.environ.get("DJANGO_DEBUG") == "1"
 
 X_FRAME_OPTIONS = 'SAMEORIGIN'
 
+# Дополнительные security настройки
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+
+# CORS settings (если нужно разрешить кросс-доменные запросы)
+CORS_ALLOW_ALL_ORIGINS = True  # Только для разработки!
+CORS_ALLOW_CREDENTIALS = True
+
 CSRF_TRUSTED_ORIGINS = ["https://*.easyappz.ru/", "http://localhost:8080", "https://easyappz.ru/"]
 
 # Allow all hosts in Docker (restrict with nginx/load balancer)
