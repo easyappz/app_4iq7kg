@@ -19,7 +19,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Message'
+                $ref: '#/components/schemas/HelloMessage'
           description: ''
   /api/auth/register/:
     post:
@@ -297,7 +297,7 @@ paths:
           type: integer
       responses:
         '200':
-          description: List of members who follow the given member.
+          description: List members who follow the given member.
           content:
             application/json:
               schema:
@@ -747,9 +747,213 @@ paths:
           description: Authentication credentials were not provided or are invalid.
         '404':
           description: Comment not found.
+  /api/dialogs/:
+    get:
+      operationId: dialogs_list
+      description: >-
+        List all dialogs where the current member is a participant. Each dialog
+        includes participants, convenience field `other_member`, optionally the
+        `last_message`, and `unread_count` of messages from the other member
+        that are not yet marked as read.
+      tags:
+      - dialogs
+      security:
+      - MemberTokenAuth: []
+      responses:
+        '200':
+          description: List of dialogs for the authenticated member.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Dialog'
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+  /api/dialogs/with/{member_id}/:
+    post:
+      operationId: dialogs_with_member_create
+      description: >-
+        Create (or reuse) a direct dialog between the authenticated member and
+        the target member. If a dialog between this pair already exists, it is
+        returned instead of creating a duplicate (idempotent behavior).
+      tags:
+      - dialogs
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: member_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: false
+      responses:
+        '200':
+          description: Existing dialog between the members.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dialog'
+        '201':
+          description: A new dialog was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dialog'
+        '400':
+          description: Cannot create a dialog (for example, with yourself).
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '404':
+          description: Target member not found.
+  /api/dialogs/{dialog_id}/messages/:
+    get:
+      operationId: dialogs_messages_list
+      description: >-
+        List messages within the specified dialog, ordered by creation time
+        ascending. Requires that the authenticated member is a participant in
+        the dialog. Supports page-number pagination.
+      tags:
+      - dialogs
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: dialog_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Paginated list of messages in the dialog.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDialogMessageList'
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '403':
+          description: The authenticated member is not a participant of this dialog.
+        '404':
+          description: Dialog not found.
+    post:
+      operationId: dialogs_messages_create
+      description: >-
+        Send a new message in the specified dialog. The sender is always the
+        authenticated member. At least one of `text` or `image` must be
+        provided.
+      tags:
+      - dialogs
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: dialog_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DialogMessageCreate'
+      responses:
+        '201':
+          description: Created message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DialogMessage'
+        '400':
+          description: Validation error.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '403':
+          description: The authenticated member is not a participant of this dialog.
+        '404':
+          description: Dialog not found.
+  /api/messages/{id}/read/:
+    post:
+      operationId: messages_mark_read_create
+      description: >-
+        Mark the specified message as read (`is_read = true`) if the
+        authenticated member is a participant of the dialog and not the sender.
+        Returns the updated message representation.
+      tags:
+      - dialogs
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: false
+      responses:
+        '200':
+          description: Updated message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DialogMessage'
+        '400':
+          description: Cannot mark this message as read (for example, your own message).
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '403':
+          description: The authenticated member is not a participant of the dialog.
+        '404':
+          description: Message not found.
+  /api/dialogs/{dialog_id}/read/:
+    post:
+      operationId: dialogs_mark_all_read_create
+      description: >-
+        Convenience endpoint to mark all unread messages sent by the other
+        participant in the specified dialog as read. Returns the number of
+        messages that were updated.
+      tags:
+      - dialogs
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: dialog_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: false
+      responses:
+        '200':
+          description: Number of messages that were newly marked as read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DialogMarkAllReadResponse'
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '403':
+          description: The authenticated member is not a participant of the dialog.
+        '404':
+          description: Dialog not found.
 components:
   schemas:
-    Message:
+    HelloMessage:
       type: object
       properties:
         message:
@@ -1023,6 +1227,107 @@ components:
       required:
       - liked
       - likes_count
+    Dialog:
+      type: object
+      properties:
+        id:
+          type: integer
+        member1:
+          $ref: '#/components/schemas/MemberListItem'
+        member2:
+          $ref: '#/components/schemas/MemberListItem'
+        other_member:
+          $ref: '#/components/schemas/MemberListItem'
+          nullable: true
+          description: >-
+            Convenience field: the other participant relative to the current
+            authenticated member.
+        created_at:
+          type: string
+          format: date-time
+        last_message:
+          $ref: '#/components/schemas/DialogMessage'
+          nullable: true
+          description: Last message in this dialog, if any.
+        unread_count:
+          type: integer
+          description: >-
+            Number of unread messages in this dialog sent by the other member
+            (i.e. `is_read = false` and `sender` is not the current member).
+      required:
+      - id
+      - member1
+      - member2
+      - created_at
+      - unread_count
+    DialogMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        dialog:
+          type: integer
+          description: Identifier of the dialog this message belongs to.
+        sender:
+          $ref: '#/components/schemas/MemberListItem'
+        text:
+          type: string
+          description: Optional text of the message.
+        image:
+          type: string
+          description: Optional image reference associated with the message.
+        created_at:
+          type: string
+          format: date-time
+        is_read:
+          type: boolean
+          description: >-
+            Indicates whether the recipient has marked this message as read.
+      required:
+      - id
+      - dialog
+      - sender
+      - text
+      - created_at
+      - is_read
+    DialogMessageCreate:
+      type: object
+      description: At least one of `text` or `image` must be provided.
+      properties:
+        text:
+          type: string
+          description: Optional text of the message.
+        image:
+          type: string
+          description: Optional image reference associated with the message.
+    PaginatedDialogMessageList:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          format: uri
+          nullable: true
+        previous:
+          type: string
+          format: uri
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/DialogMessage'
+      required:
+      - count
+      - results
+    DialogMarkAllReadResponse:
+      type: object
+      properties:
+        updated_count:
+          type: integer
+          description: Number of messages that were newly marked as read.
+      required:
+      - updated_count
   securitySchemes:
     basicAuth:
       type: http

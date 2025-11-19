@@ -13,8 +13,10 @@ from rest_framework.views import APIView
 from .models import (
     Comment,
     CommentLike,
+    Dialog,
     Member,
     MemberToken,
+    Message,
     Post,
     PostLike,
     Subscription,
@@ -23,11 +25,14 @@ from .serializers import (
     AuthTokenSerializer,
     CommentCreateUpdateSerializer,
     CommentSerializer,
+    DialogSerializer,
+    HelloMessageSerializer,
     MemberListSerializer,
     MemberLoginSerializer,
     MemberProfileSerializer,
     MemberRegisterSerializer,
     MemberUpdateSerializer,
+    MessageCreateSerializer,
     MessageSerializer,
     PostCreateUpdateSerializer,
     PostSerializer,
@@ -60,13 +65,13 @@ class HelloView(APIView):
     """A simple API endpoint that returns a greeting message."""
 
     @extend_schema(
-        responses={200: MessageSerializer},
+        responses={200: HelloMessageSerializer},
         description="Get a hello world message",
         tags=["api"],
     )
     def get(self, request):
         data = {"message": "Hello!", "timestamp": timezone.now()}
-        serializer = MessageSerializer(data)
+        serializer = HelloMessageSerializer(data)
         return Response(serializer.data)
 
 
@@ -718,3 +723,264 @@ class CommentLikeToggleView(APIView):
             {"liked": liked, "likes_count": likes_count},
             status=status.HTTP_200_OK,
         )
+
+
+class DialogListView(generics.ListAPIView):
+    """List dialogs where the current member is a participant."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = DialogSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        member = self.request.user
+        if not isinstance(member, Member):
+            return Dialog.objects.none()
+
+        return (
+            Dialog.objects.filter(Q(member1=member) | Q(member2=member))
+            .select_related("member1", "member2")
+            .order_by("-created_at")
+        )
+
+    @extend_schema(
+        responses={200: DialogSerializer(many=True)},
+        description=(
+            "List dialogs for the authenticated member. Each dialog includes "
+            "participants, `other_member`, optional `last_message` and "
+            "`unread_count` of messages from the other member that are not read yet."
+        ),
+        tags=["dialogs"],
+    )
+    def get(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().get(request, *args, **kwargs)
+
+
+class DialogWithMemberView(APIView):
+    """Return an existing dialog with a member or create a new one.
+
+    The operation is idempotent: if a dialog already exists, it is returned;
+    otherwise a new dialog is created and returned.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        request=None,
+        responses={
+            200: DialogSerializer,
+            201: DialogSerializer,
+        },
+        description=(
+            "Get or create a direct dialog between the authenticated member "
+            "and the target member. If a dialog already exists, it is "
+            "returned; otherwise a new dialog is created."
+        ),
+        tags=["dialogs"],
+    )
+    def post(self, request, member_id):
+        current = request.user
+        if not isinstance(current, Member):
+            return Response(
+                {"detail": "Authenticated user is not a member."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target = get_object_or_404(Member, id=member_id)
+
+        if target.id == current.id:
+            return Response(
+                {"detail": "You cannot create a dialog with yourself."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        member1 = current
+        member2 = target
+        if member1.id > member2.id:
+            member1, member2 = member2, member1
+
+        dialog, created = Dialog.objects.get_or_create(
+            member1=member1,
+            member2=member2,
+        )
+
+        serializer = DialogSerializer(dialog, context={"request": request})
+        status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(serializer.data, status=status_code)
+
+
+class DialogMessagesListCreateView(generics.ListCreateAPIView):
+    """List or send messages in a specific dialog."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return MessageCreateSerializer
+        return MessageSerializer
+
+    def get_dialog(self) -> Dialog:
+        if hasattr(self, "_dialog"):
+            return self._dialog  # type: ignore[no-any-return]
+
+        dialog_id = self.kwargs.get("dialog_id")
+        dialog = get_object_or_404(
+            Dialog.objects.select_related("member1", "member2"),
+            id=dialog_id,
+        )
+
+        member = self.request.user
+        if not isinstance(member, Member):
+            raise PermissionDenied("Authenticated user is not a member.")
+
+        if dialog.member1_id != member.id and dialog.member2_id != member.id:
+            raise PermissionDenied("You are not a participant of this dialog.")
+
+        self._dialog = dialog
+        return dialog
+
+    def get_queryset(self):
+        dialog = self.get_dialog()
+        return dialog.messages.select_related("sender").order_by("created_at")
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context.setdefault("dialog", getattr(self, "_dialog", None))
+        return context
+
+    @extend_schema(
+        responses={200: MessageSerializer(many=True)},
+        description=(
+            "List messages in the specified dialog, ordered by creation time "
+            "ascending. Supports page-number pagination."
+        ),
+        tags=["dialogs"],
+    )
+    def get(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().get(request, *args, **kwargs)
+
+    @extend_schema(
+        request=MessageCreateSerializer,
+        responses={201: MessageSerializer},
+        description=(
+            "Send a new message in the specified dialog. The sender is taken "
+            "from the authenticated member. At least one of `text` or "
+            "`image` must be provided."
+        ),
+        tags=["dialogs"],
+    )
+    def post(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().post(request, *args, **kwargs)
+
+    def create(self, request, *args, **kwargs):  # type: ignore[override]
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        member = request.user
+        if not isinstance(member, Member):
+            raise PermissionDenied("Authenticated user is not a member.")
+
+        dialog = self.get_dialog()
+        message = serializer.save(dialog=dialog, sender=member)
+
+        read_serializer = MessageSerializer(
+            message,
+            context=self.get_serializer_context(),
+        )
+        headers = self.get_success_headers(read_serializer.data)
+        return Response(read_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+class MessageMarkReadView(APIView):
+    """Mark a specific message as read by the recipient."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        request=None,
+        responses={200: MessageSerializer},
+        description=(
+            "Mark the specified message as read (set `is_read = true`) if the "
+            "authenticated member is a participant of the dialog and is not "
+            "the sender. Returns the updated message."
+        ),
+        tags=["dialogs"],
+    )
+    def post(self, request, id):  # noqa: A003 - id is required by URL pattern
+        member = request.user
+        if not isinstance(member, Member):
+            return Response(
+                {"detail": "Authenticated user is not a member."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        message = get_object_or_404(
+            Message.objects.select_related("dialog", "sender"),
+            id=id,
+        )
+
+        dialog = message.dialog
+        if dialog.member1_id != member.id and dialog.member2_id != member.id:
+            raise PermissionDenied("You are not a participant of this dialog.")
+
+        if message.sender_id == member.id:
+            return Response(
+                {"detail": "You cannot mark your own message as read."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not message.is_read:
+            message.is_read = True
+            message.save(update_fields=["is_read"])
+
+        serializer = MessageSerializer(message, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class DialogMarkAllReadView(APIView):
+    """Mark all messages from the other member as read in a dialog."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        request=None,
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "updated_count": {
+                        "type": "integer",
+                        "description": "Number of messages that were newly marked as read.",
+                    }
+                },
+                "required": ["updated_count"],
+            }
+        },
+        description=(
+            "Mark all unread messages sent by the other participant in the "
+            "specified dialog as read. Returns the number of messages that "
+            "were updated."
+        ),
+        tags=["dialogs"],
+    )
+    def post(self, request, dialog_id):
+        member = request.user
+        if not isinstance(member, Member):
+            return Response(
+                {"detail": "Authenticated user is not a member."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        dialog = get_object_or_404(Dialog, id=dialog_id)
+
+        if dialog.member1_id != member.id and dialog.member2_id != member.id:
+            raise PermissionDenied("You are not a participant of this dialog.")
+
+        updated_count = (
+            Message.objects.filter(dialog=dialog, is_read=False)
+            .exclude(sender=member)
+            .update(is_read=True)
+        )
+
+        return Response({"updated_count": updated_count}, status=status.HTTP_200_OK)

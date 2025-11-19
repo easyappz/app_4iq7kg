@@ -1,10 +1,10 @@
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import serializers
 
-from .models import Member, Post, Comment
+from .models import Comment, Dialog, Member, Message, Post
 
 
-class MessageSerializer(serializers.Serializer):
+class HelloMessageSerializer(serializers.Serializer):
     message = serializers.CharField(max_length=200)
     timestamp = serializers.DateTimeField(read_only=True)
 
@@ -276,3 +276,114 @@ class CommentCreateUpdateSerializer(serializers.ModelSerializer):
             )
 
         return value
+
+
+class DialogSerializer(serializers.ModelSerializer):
+    """Serializer for direct dialogs between two members.
+
+    Includes minimal member representations, the other participant relative to
+    the current user, last message, and unread count.
+    """
+
+    member1 = MemberListSerializer(read_only=True)
+    member2 = MemberListSerializer(read_only=True)
+    other_member = serializers.SerializerMethodField()
+    last_message = serializers.SerializerMethodField()
+    unread_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Dialog
+        fields = [
+            "id",
+            "member1",
+            "member2",
+            "created_at",
+            "other_member",
+            "last_message",
+            "unread_count",
+        ]
+        read_only_fields = fields
+
+    def get_other_member(self, obj):
+        request = self.context.get("request")
+        current_member = getattr(request, "user", None)
+
+        if not isinstance(current_member, Member):
+            return None
+
+        if obj.member1_id == current_member.id:
+            other = obj.member2
+        elif obj.member2_id == current_member.id:
+            other = obj.member1
+        else:
+            return None
+
+        return MemberListSerializer(other, context=self.context).data
+
+    def get_last_message(self, obj):
+        last_msg = (
+            obj.messages.select_related("sender")
+            .order_by("-created_at")
+            .first()
+        )
+        if last_msg is None:
+            return None
+        return MessageSerializer(last_msg, context=self.context).data
+
+    def get_unread_count(self, obj) -> int:
+        request = self.context.get("request")
+        current_member = getattr(request, "user", None)
+
+        if not isinstance(current_member, Member):
+            return 0
+
+        return (
+            obj.messages.filter(is_read=False)
+            .exclude(sender=current_member)
+            .count()
+        )
+
+
+class MessageSerializer(serializers.ModelSerializer):
+    """Serializer for messages inside dialogs."""
+
+    sender = MemberListSerializer(read_only=True)
+
+    class Meta:
+        model = Message
+        fields = [
+            "id",
+            "dialog",
+            "sender",
+            "text",
+            "image",
+            "created_at",
+            "is_read",
+        ]
+        read_only_fields = [
+            "id",
+            "dialog",
+            "sender",
+            "created_at",
+            "is_read",
+        ]
+
+
+class MessageCreateSerializer(serializers.ModelSerializer):
+    """Serializer used for creating new messages in a dialog.
+
+    At least one of ``text`` or ``image`` must be provided.
+    """
+
+    class Meta:
+        model = Message
+        fields = ["text", "image"]
+
+    def validate(self, attrs):
+        text = (attrs.get("text") or "").strip()
+        image = (attrs.get("image") or "").strip()
+        if not text and not image:
+            raise serializers.ValidationError(
+                "At least one of text or image must be provided."
+            )
+        return attrs

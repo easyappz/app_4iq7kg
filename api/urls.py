@@ -4,6 +4,10 @@ from .views import (
     CommentDetailView,
     CommentLikeToggleView,
     CurrentMemberView,
+    DialogListView,
+    DialogMarkAllReadView,
+    DialogMessagesListCreateView,
+    DialogWithMemberView,
     FollowView,
     HelloView,
     LoginView,
@@ -13,6 +17,7 @@ from .views import (
     MemberSearchView,
     MemberSelfUpdateView,
     MemberSubscriptionsView,
+    MessageMarkReadView,
     PostCommentsListCreateView,
     PostDetailView,
     PostLikeToggleView,
@@ -59,5 +64,27 @@ urlpatterns = [
         "comments/<int:id>/like/",
         CommentLikeToggleView.as_view(),
         name="comment-like-toggle",
+    ),
+    # Dialogs / Messenger
+    path("dialogs/", DialogListView.as_view(), name="dialog-list"),
+    path(
+        "dialogs/with/<int:member_id>/",
+        DialogWithMemberView.as_view(),
+        name="dialog-with-member",
+    ),
+    path(
+        "dialogs/<int:dialog_id>/messages/",
+        DialogMessagesListCreateView.as_view(),
+        name="dialog-messages",
+    ),
+    path(
+        "messages/<int:id>/read/",
+        MessageMarkReadView.as_view(),
+        name="message-mark-read",
+    ),
+    path(
+        "dialogs/<int:dialog_id>/read/",
+        DialogMarkAllReadView.as_view(),
+        name="dialog-mark-all-read",
     ),
 ]
