@@ -24,6 +24,24 @@ class Member(models.Model):
     def __str__(self) -> str:
         return self.username
 
+    @property
+    def is_authenticated(self) -> bool:
+        """Compatibility with Django/DRF authentication system.
+
+        DRF's IsAuthenticated permission checks ``request.user.is_authenticated``.
+        Since Member is not based on Django's AbstractBaseUser, we provide this
+        property so that authenticated Member instances pass permission checks
+        without raising AttributeError.
+        """
+
+        return True
+
+    @property
+    def is_anonymous(self) -> bool:
+        """Compatibility helper mirroring Django's AnonymousUser API."""
+
+        return False
+
 
 class MemberToken(models.Model):
     """Authentication token for Member.
