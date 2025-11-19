@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
   getMember,
@@ -14,6 +14,7 @@ import {
   deletePost,
   togglePostLike,
 } from '../../api/posts';
+import { getDialogWithMember } from '../../api/dialogs';
 import { PostCard } from '../Home/HomeFeedPage';
 
 function getMemberDisplayName(member) {
@@ -55,6 +56,7 @@ function UserProfilePage() {
   const rawId = params.id;
   const memberId = Number(rawId);
 
+  const navigate = useNavigate();
   const { currentMember } = useAuth();
 
   const [member, setMember] = useState(null);
@@ -69,6 +71,9 @@ function UserProfilePage() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowChanging, setIsFollowChanging] = useState(false);
   const [followError, setFollowError] = useState('');
+
+  const [isStartingDialog, setIsStartingDialog] = useState(false);
+  const [startDialogError, setStartDialogError] = useState('');
 
   const [updatingPostId, setUpdatingPostId] = useState(null);
   const [deletingPostId, setDeletingPostId] = useState(null);
@@ -86,6 +91,7 @@ function UserProfilePage() {
       setIsLoading(true);
       setError('');
       setFollowError('');
+      setStartDialogError('');
 
       try {
         const [
@@ -209,6 +215,40 @@ function UserProfilePage() {
       setFollowError('Не удалось изменить подписку. Попробуйте позже.');
     } finally {
       setIsFollowChanging(false);
+    }
+  };
+
+  const handleStartDialog = async () => {
+    if (!member || !currentMember) {
+      return;
+    }
+
+    if (member.id === currentMember.id) {
+      return;
+    }
+
+    setIsStartingDialog(true);
+    setStartDialogError('');
+
+    try {
+      const response = await getDialogWithMember(member.id);
+      const dialog = response.data || null;
+      const dialogId = dialog && dialog.id ? dialog.id : null;
+
+      if (dialogId) {
+        navigate(`/dialogs?dialog=${dialogId}`);
+      } else {
+        navigate('/dialogs');
+      }
+    } catch (startError) {
+      if (startError && startError.response && startError.response.status === 401) {
+        navigate('/login', { replace: true });
+        return;
+      }
+
+      setStartDialogError('Не удалось открыть диалог. Попробуйте позже.');
+    } finally {
+      setIsStartingDialog(false);
     }
   };
 
@@ -437,8 +477,21 @@ function UserProfilePage() {
                       ? 'Отписаться'
                       : 'Подписаться'}
                 </button>
+
+                <button
+                  type="button"
+                  className="follow-button follow-button-secondary"
+                  onClick={handleStartDialog}
+                  disabled={isStartingDialog}
+                >
+                  {isStartingDialog ? 'Открытие чата...' : 'Написать сообщение'}
+                </button>
+
                 {followError ? (
                   <div className="profile-follow-error">{followError}</div>
+                ) : null}
+                {startDialogError ? (
+                  <div className="profile-follow-error">{startDialogError}</div>
                 ) : null}
               </div>
             ) : null}
