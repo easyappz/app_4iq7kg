@@ -306,6 +306,447 @@ paths:
                   $ref: '#/components/schemas/MemberListItem'
         '404':
           description: Member not found.
+  /api/posts/:
+    get:
+      operationId: posts_list
+      description: >-
+        Global feed of posts from all members, ordered by creation time (newest
+        first). Supports page-number pagination.
+      tags:
+      - posts
+      security:
+      - {}
+      parameters:
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Paginated list of posts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPostList'
+    post:
+      operationId: posts_create
+      description: Create a new post for the authenticated member.
+      tags:
+      - posts
+      security:
+      - MemberTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostCreateUpdate'
+      responses:
+        '201':
+          description: Created post.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '400':
+          description: Validation error.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+  /api/posts/{id}/:
+    get:
+      operationId: posts_retrieve
+      description: Retrieve a single post by id.
+      tags:
+      - posts
+      security:
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Post details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '404':
+          description: Post not found.
+    put:
+      operationId: posts_update
+      description: Update a post. Only the author is allowed to update.
+      tags:
+      - posts
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostCreateUpdate'
+      responses:
+        '200':
+          description: Updated post.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '400':
+          description: Validation error.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '403':
+          description: You are not the author of this post.
+        '404':
+          description: Post not found.
+    patch:
+      operationId: posts_partial_update
+      description: Partially update a post. Only the author is allowed to update.
+      tags:
+      - posts
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostCreateUpdate'
+      responses:
+        '200':
+          description: Updated post.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '400':
+          description: Validation error.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '403':
+          description: You are not the author of this post.
+        '404':
+          description: Post not found.
+    delete:
+      operationId: posts_destroy
+      description: Delete a post. Only the author is allowed to delete.
+      tags:
+      - posts
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '204':
+          description: Post deleted.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '403':
+          description: You are not the author of this post.
+        '404':
+          description: Post not found.
+  /api/members/{id}/posts/:
+    get:
+      operationId: members_posts_list
+      description: List posts authored by the given member.
+      tags:
+      - posts
+      security:
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Paginated list of posts authored by the member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPostList'
+        '404':
+          description: Member not found.
+  /api/posts/{id}/like/:
+    post:
+      operationId: posts_like_toggle
+      description: >-
+        Toggle like on a post for the authenticated member. If the post was not
+        previously liked, a like is created; otherwise the existing like is
+        removed.
+      tags:
+      - posts
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: false
+      responses:
+        '200':
+          description: Current like state and updated likes count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LikeToggleResponse'
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '404':
+          description: Post not found.
+  /api/posts/{post_id}/comments/:
+    get:
+      operationId: posts_comments_list
+      description: >-
+        List comments for the specified post. The response is flat but each
+        comment includes its parent field; replies are also exposed via a
+        simple replies list.
+      tags:
+      - comments
+      security:
+      - {}
+      parameters:
+      - name: post_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Paginated list of comments for the post.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCommentList'
+        '404':
+          description: Post not found.
+    post:
+      operationId: posts_comments_create
+      description: >-
+        Create a new comment on the specified post. Optionally accepts a parent
+        comment id to create a reply.
+      tags:
+      - comments
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: post_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreateUpdate'
+      responses:
+        '201':
+          description: Created comment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          description: Validation error.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '404':
+          description: Post not found.
+  /api/comments/{id}/:
+    get:
+      operationId: comments_retrieve
+      description: Retrieve a single comment by id.
+      tags:
+      - comments
+      security:
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Comment details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '404':
+          description: Comment not found.
+    put:
+      operationId: comments_update
+      description: Update a comment. Only the author is allowed to update.
+      tags:
+      - comments
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreateUpdate'
+      responses:
+        '200':
+          description: Updated comment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          description: Validation error.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '403':
+          description: You are not the author of this comment.
+        '404':
+          description: Comment not found.
+    patch:
+      operationId: comments_partial_update
+      description: Partially update a comment. Only the author is allowed.
+      tags:
+      - comments
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreateUpdate'
+      responses:
+        '200':
+          description: Updated comment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          description: Validation error.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '403':
+          description: You are not the author of this comment.
+        '404':
+          description: Comment not found.
+    delete:
+      operationId: comments_destroy
+      description: Delete a comment. Only the author is allowed to delete.
+      tags:
+      - comments
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '204':
+          description: Comment deleted.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '403':
+          description: You are not the author of this comment.
+        '404':
+          description: Comment not found.
+  /api/comments/{id}/like/:
+    post:
+      operationId: comments_like_toggle
+      description: >-
+        Toggle like on a comment for the authenticated member. If the comment
+        was not previously liked, a like is created; otherwise the existing like
+        is removed.
+      tags:
+      - comments
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: false
+      responses:
+        '200':
+          description: Current like state and updated likes count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LikeToggleResponse'
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '404':
+          description: Comment not found.
 components:
   schemas:
     Message:
@@ -445,6 +886,143 @@ components:
       required:
       - following
       - detail
+    Post:
+      type: object
+      properties:
+        id:
+          type: integer
+        author:
+          $ref: '#/components/schemas/MemberListItem'
+        text:
+          type: string
+        image:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        likes_count:
+          type: integer
+        comments_count:
+          type: integer
+      required:
+      - id
+      - author
+      - text
+      - created_at
+      - updated_at
+      - likes_count
+      - comments_count
+    PostCreateUpdate:
+      type: object
+      properties:
+        text:
+          type: string
+        image:
+          type: string
+      required:
+      - text
+    CommentReply:
+      type: object
+      properties:
+        id:
+          type: integer
+        post:
+          type: integer
+        author:
+          $ref: '#/components/schemas/MemberListItem'
+        text:
+          type: string
+        parent:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        likes_count:
+          type: integer
+      required:
+      - id
+      - post
+      - author
+      - text
+      - created_at
+      - updated_at
+      - likes_count
+    Comment:
+      allOf:
+      - $ref: '#/components/schemas/CommentReply'
+      - type: object
+        properties:
+          replies:
+            type: array
+            items:
+              $ref: '#/components/schemas/CommentReply'
+    CommentCreateUpdate:
+      type: object
+      properties:
+        text:
+          type: string
+        parent:
+          type: integer
+          nullable: true
+      required:
+      - text
+    PaginatedPostList:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          format: uri
+          nullable: true
+        previous:
+          type: string
+          format: uri
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Post'
+      required:
+      - count
+      - results
+    PaginatedCommentList:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          format: uri
+          nullable: true
+        previous:
+          type: string
+          format: uri
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+      required:
+      - count
+      - results
+    LikeToggleResponse:
+      type: object
+      properties:
+        liked:
+          type: boolean
+        likes_count:
+          type: integer
+      required:
+      - liked
+      - likes_count
   securitySchemes:
     basicAuth:
       type: http

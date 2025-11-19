@@ -1,23 +1,59 @@
 import secrets
 
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
-from rest_framework import permissions, status
+from rest_framework import generics, permissions, status
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Member, MemberToken, Subscription
+from .models import (
+    Comment,
+    CommentLike,
+    Member,
+    MemberToken,
+    Post,
+    PostLike,
+    Subscription,
+)
 from .serializers import (
     AuthTokenSerializer,
+    CommentCreateUpdateSerializer,
+    CommentSerializer,
     MemberListSerializer,
     MemberLoginSerializer,
     MemberProfileSerializer,
     MemberRegisterSerializer,
     MemberUpdateSerializer,
     MessageSerializer,
+    PostCreateUpdateSerializer,
+    PostSerializer,
 )
+
+
+class StandardResultsSetPagination(PageNumberPagination):
+    """Default pagination style used for list endpoints."""
+
+    page_size = 10
+    page_size_query_param = "page_size"
+    max_page_size = 50
+
+
+class IsAuthorOrReadOnly(permissions.BasePermission):
+    """Allow read access to anyone, write access only to the author."""
+
+    def has_object_permission(self, request, view, obj) -> bool:  # pragma: no cover - simple permission logic
+        if request.method in permissions.SAFE_METHODS:
+            return True
+
+        author = getattr(obj, "author", None)
+        if not isinstance(request.user, Member) or author is None:
+            return False
+
+        return author.id == request.user.id
 
 
 class HelloView(APIView):
@@ -350,3 +386,335 @@ class MemberFollowersView(APIView):
 
         serializer = MemberListSerializer(follower_members, many=True)
         return Response(serializer.data)
+
+
+class PostListCreateView(generics.ListCreateAPIView):
+    """Global feed of posts and endpoint for creating new posts."""
+
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    pagination_class = StandardResultsSetPagination
+    serializer_class = PostSerializer
+
+    def get_queryset(self):
+        return (
+            Post.objects.all()
+            .select_related("author")
+            .annotate(
+                likes_count=Count("likes"),
+                comments_count=Count("comments"),
+            )
+            .order_by("-created_at")
+        )
+
+    def get_serializer_class(self):
+        if self.request.method in ("POST", "PUT", "PATCH"):
+            return PostCreateUpdateSerializer
+        return PostSerializer
+
+    @extend_schema(
+        request=PostCreateUpdateSerializer,
+        responses={
+            200: PostSerializer(many=True),
+        },
+        description="List posts from all members (global feed) with pagination.",
+        tags=["posts"],
+    )
+    def get(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().get(request, *args, **kwargs)
+
+    @extend_schema(
+        request=PostCreateUpdateSerializer,
+        responses={201: PostSerializer},
+        description="Create a new post for the authenticated member.",
+        tags=["posts"],
+    )
+    def post(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().post(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        author = self.request.user
+        if not isinstance(author, Member):
+            raise PermissionDenied("Authenticated user is not a member.")
+        serializer.save(author=author)
+
+
+class PostDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update, or delete a single post."""
+
+    lookup_field = "id"
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsAuthorOrReadOnly]
+
+    def get_queryset(self):
+        return (
+            Post.objects.all()
+            .select_related("author")
+            .annotate(
+                likes_count=Count("likes"),
+                comments_count=Count("comments"),
+            )
+        )
+
+    def get_serializer_class(self):
+        if self.request.method in ("PUT", "PATCH"):
+            return PostCreateUpdateSerializer
+        return PostSerializer
+
+    @extend_schema(
+        responses={200: PostSerializer},
+        description="Retrieve a single post by id.",
+        tags=["posts"],
+    )
+    def get(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().get(request, *args, **kwargs)
+
+    @extend_schema(
+        request=PostCreateUpdateSerializer,
+        responses={200: PostSerializer},
+        description="Update a post (only the author is allowed).",
+        tags=["posts"],
+    )
+    def put(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().put(request, *args, **kwargs)
+
+    @extend_schema(
+        request=PostCreateUpdateSerializer,
+        responses={200: PostSerializer},
+        description="Partially update a post (only the author is allowed).",
+        tags=["posts"],
+    )
+    def patch(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().patch(request, *args, **kwargs)
+
+    @extend_schema(
+        responses={204: None},
+        description="Delete a post (only the author is allowed).",
+        tags=["posts"],
+    )
+    def delete(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().delete(request, *args, **kwargs)
+
+
+class UserPostsView(generics.ListAPIView):
+    """List posts authored by a specific member."""
+
+    permission_classes = [permissions.AllowAny]
+    pagination_class = StandardResultsSetPagination
+    serializer_class = PostSerializer
+
+    def get_queryset(self):
+        member_id = self.kwargs.get("id")
+        return (
+            Post.objects.filter(author_id=member_id)
+            .select_related("author")
+            .annotate(
+                likes_count=Count("likes"),
+                comments_count=Count("comments"),
+            )
+            .order_by("-created_at")
+        )
+
+    @extend_schema(
+        responses={200: PostSerializer(many=True)},
+        description="List posts authored by the given member (with pagination).",
+        tags=["posts"],
+    )
+    def get(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().get(request, *args, **kwargs)
+
+
+class PostLikeToggleView(APIView):
+    """Toggle like on a post for the authenticated member."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        request=None,
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "liked": {"type": "boolean"},
+                    "likes_count": {"type": "integer"},
+                },
+                "required": ["liked", "likes_count"],
+            }
+        },
+        description="Toggle like on a post. Returns current like state and likes count.",
+        tags=["posts"],
+    )
+    def post(self, request, id):  # noqa: A003 - id is required by URL pattern
+        member = request.user
+        if not isinstance(member, Member):
+            return Response(
+                {"detail": "Authenticated user is not a member."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        post = get_object_or_404(Post, id=id)
+
+        like, created = PostLike.objects.get_or_create(member=member, post=post)
+        if created:
+            liked = True
+        else:
+            like.delete()
+            liked = False
+
+        likes_count = PostLike.objects.filter(post=post).count()
+        return Response(
+            {"liked": liked, "likes_count": likes_count},
+            status=status.HTTP_200_OK,
+        )
+
+
+class PostCommentsListCreateView(generics.ListCreateAPIView):
+    """List or create comments for a specific post."""
+
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    pagination_class = StandardResultsSetPagination
+    lookup_url_kwarg = "post_id"
+
+    def get_queryset(self):
+        post_id = self.kwargs.get("post_id")
+        return (
+            Comment.objects.filter(post_id=post_id)
+            .select_related("author", "post", "parent")
+            .annotate(likes_count=Count("likes"))
+            .order_by("created_at")
+        )
+
+    def get_serializer_class(self):
+        if self.request.method in ("POST", "PUT", "PATCH"):
+            return CommentCreateUpdateSerializer
+        return CommentSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.request.method in ("POST", "PUT", "PATCH"):
+            post_id = self.kwargs.get("post_id")
+            if post_id is not None:
+                post = get_object_or_404(Post, id=post_id)
+                context["post"] = post
+        return context
+
+    @extend_schema(
+        responses={200: CommentSerializer(many=True)},
+        description="List comments for the specified post.",
+        tags=["comments"],
+    )
+    def get(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().get(request, *args, **kwargs)
+
+    @extend_schema(
+        request=CommentCreateUpdateSerializer,
+        responses={201: CommentSerializer},
+        description="Create a new comment on the specified post.",
+        tags=["comments"],
+    )
+    def post(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().post(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        author = self.request.user
+        if not isinstance(author, Member):
+            raise PermissionDenied("Authenticated user is not a member.")
+
+        post_id = self.kwargs.get("post_id")
+        post = get_object_or_404(Post, id=post_id)
+        serializer.save(post=post, author=author)
+
+
+class CommentDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update, or delete a single comment."""
+
+    lookup_field = "id"
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsAuthorOrReadOnly]
+
+    def get_queryset(self):
+        return (
+            Comment.objects.all()
+            .select_related("author", "post", "parent")
+            .annotate(likes_count=Count("likes"))
+        )
+
+    def get_serializer_class(self):
+        if self.request.method in ("PUT", "PATCH"):
+            return CommentCreateUpdateSerializer
+        return CommentSerializer
+
+    @extend_schema(
+        responses={200: CommentSerializer},
+        description="Retrieve a single comment by id.",
+        tags=["comments"],
+    )
+    def get(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().get(request, *args, **kwargs)
+
+    @extend_schema(
+        request=CommentCreateUpdateSerializer,
+        responses={200: CommentSerializer},
+        description="Update a comment (only the author is allowed).",
+        tags=["comments"],
+    )
+    def put(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().put(request, *args, **kwargs)
+
+    @extend_schema(
+        request=CommentCreateUpdateSerializer,
+        responses={200: CommentSerializer},
+        description="Partially update a comment (only the author is allowed).",
+        tags=["comments"],
+    )
+    def patch(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().patch(request, *args, **kwargs)
+
+    @extend_schema(
+        responses={204: None},
+        description="Delete a comment (only the author is allowed).",
+        tags=["comments"],
+    )
+    def delete(self, request, *args, **kwargs):  # type: ignore[override]
+        return super().delete(request, *args, **kwargs)
+
+
+class CommentLikeToggleView(APIView):
+    """Toggle like on a comment for the authenticated member."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        request=None,
+        responses={
+            200: {
+                "type": "object",
+                "properties": {
+                    "liked": {"type": "boolean"},
+                    "likes_count": {"type": "integer"},
+                },
+                "required": ["liked", "likes_count"],
+            }
+        },
+        description="Toggle like on a comment. Returns current like state and likes count.",
+        tags=["comments"],
+    )
+    def post(self, request, id):  # noqa: A003 - id is required by URL pattern
+        member = request.user
+        if not isinstance(member, Member):
+            return Response(
+                {"detail": "Authenticated user is not a member."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        comment = get_object_or_404(Comment, id=id)
+
+        like, created = CommentLike.objects.get_or_create(member=member, comment=comment)
+        if created:
+            liked = True
+        else:
+            like.delete()
+            liked = False
+
+        likes_count = CommentLike.objects.filter(comment=comment).count()
+        return Response(
+            {"liked": liked, "likes_count": likes_count},
+            status=status.HTTP_200_OK,
+        )

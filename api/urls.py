@@ -1,6 +1,8 @@
 from django.urls import path
 
 from .views import (
+    CommentDetailView,
+    CommentLikeToggleView,
     CurrentMemberView,
     FollowView,
     HelloView,
@@ -11,7 +13,13 @@ from .views import (
     MemberSearchView,
     MemberSelfUpdateView,
     MemberSubscriptionsView,
+    PostCommentsListCreateView,
+    PostDetailView,
+    PostLikeToggleView,
+    PostListCreateView,
     RegisterView,
+    UnfollowView,
+    UserPostsView,
 )
 
 urlpatterns = [
@@ -34,5 +42,22 @@ urlpatterns = [
         "members/<int:id>/followers/",
         MemberFollowersView.as_view(),
         name="member-followers",
+    ),
+    # Posts
+    path("posts/", PostListCreateView.as_view(), name="post-list-create"),
+    path("posts/<int:id>/", PostDetailView.as_view(), name="post-detail"),
+    path("members/<int:id>/posts/", UserPostsView.as_view(), name="member-posts"),
+    path("posts/<int:id>/like/", PostLikeToggleView.as_view(), name="post-like-toggle"),
+    # Comments
+    path(
+        "posts/<int:post_id>/comments/",
+        PostCommentsListCreateView.as_view(),
+        name="post-comments",
+    ),
+    path("comments/<int:id>/", CommentDetailView.as_view(), name="comment-detail"),
+    path(
+        "comments/<int:id>/like/",
+        CommentLikeToggleView.as_view(),
+        name="comment-like-toggle",
     ),
 ]

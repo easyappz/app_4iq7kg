@@ -1,7 +1,7 @@
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import serializers
 
-from .models import Member
+from .models import Member, Post, Comment
 
 
 class MessageSerializer(serializers.Serializer):
@@ -65,10 +65,10 @@ class MemberLoginSerializer(serializers.Serializer):
 
         try:
             member = Member.objects.get(username=username)
-        except Member.DoesNotExist:
+        except Member.DoesNotExist as exc:  # pragma: no cover - simple error path
             raise serializers.ValidationError(
                 "Invalid username or password."
-            )
+            ) from exc
 
         if not check_password(password, member.password):
             raise serializers.ValidationError(
@@ -134,3 +134,145 @@ class AuthTokenSerializer(serializers.Serializer):
 
     token = serializers.CharField()
     member = MemberProfileSerializer()
+
+
+class PostSerializer(serializers.ModelSerializer):
+    """Read-only serializer for posts with aggregated counters."""
+
+    author = MemberListSerializer(read_only=True)
+    likes_count = serializers.SerializerMethodField()
+    comments_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Post
+        fields = [
+            "id",
+            "author",
+            "text",
+            "image",
+            "created_at",
+            "updated_at",
+            "likes_count",
+            "comments_count",
+        ]
+        read_only_fields = [
+            "id",
+            "author",
+            "created_at",
+            "updated_at",
+            "likes_count",
+            "comments_count",
+        ]
+
+    def get_likes_count(self, obj) -> int:
+        annotated = getattr(obj, "likes_count", None)
+        if annotated is not None:
+            return int(annotated)
+        return obj.likes.count()
+
+    def get_comments_count(self, obj) -> int:
+        annotated = getattr(obj, "comments_count", None)
+        if annotated is not None:
+            return int(annotated)
+        return obj.comments.count()
+
+
+class PostCreateUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for creating and updating posts."""
+
+    class Meta:
+        model = Post
+        fields = ["text", "image"]
+
+
+class CommentReplySerializer(serializers.ModelSerializer):
+    """Serializer for replies used inside CommentSerializer.
+
+    Does not include nested replies to avoid deep recursion.
+    """
+
+    author = MemberListSerializer(read_only=True)
+    likes_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Comment
+        fields = [
+            "id",
+            "post",
+            "author",
+            "text",
+            "parent",
+            "created_at",
+            "updated_at",
+            "likes_count",
+        ]
+        read_only_fields = fields
+
+    def get_likes_count(self, obj) -> int:
+        annotated = getattr(obj, "likes_count", None)
+        if annotated is not None:
+            return int(annotated)
+        return obj.likes.count()
+
+
+class CommentSerializer(serializers.ModelSerializer):
+    """Read-only serializer for comments with likes and optional replies."""
+
+    author = MemberListSerializer(read_only=True)
+    likes_count = serializers.SerializerMethodField()
+    replies = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Comment
+        fields = [
+            "id",
+            "post",
+            "author",
+            "text",
+            "parent",
+            "created_at",
+            "updated_at",
+            "likes_count",
+            "replies",
+        ]
+        read_only_fields = fields
+
+    def get_likes_count(self, obj) -> int:
+        annotated = getattr(obj, "likes_count", None)
+        if annotated is not None:
+            return int(annotated)
+        return obj.likes.count()
+
+    def get_replies(self, obj):
+        replies_qs = obj.replies.all().select_related("author")
+        serializer = CommentReplySerializer(replies_qs, many=True, context=self.context)
+        return serializer.data
+
+
+class CommentCreateUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for creating and updating comments.
+
+    The ``post`` is supplied by the view; only ``text`` and ``parent`` are writable.
+    """
+
+    class Meta:
+        model = Comment
+        fields = ["text", "parent"]
+
+    def validate_parent(self, value: Comment | None) -> Comment | None:  # type: ignore[name-defined]
+        if value is None:
+            return value
+
+        expected_post = None
+        post_from_context = self.context.get("post")
+        if post_from_context is not None:
+            expected_post = post_from_context
+        elif self.instance is not None:
+            expected_post = self.instance.post
+
+        if expected_post is not None and value.post_id != expected_post.id:
+            raise serializers.ValidationError(
+                "Parent comment must belong to the same post."
+            )
+
+        return value
