@@ -69,7 +69,7 @@ export function AuthProvider({ children }) {
 
       return response;
     },
-    [navigate]
+    [navigate],
   );
 
   const handleRegister = useCallback(
@@ -90,7 +90,7 @@ export function AuthProvider({ children }) {
 
       return response;
     },
-    [navigate]
+    [navigate],
   );
 
   const handleLogout = useCallback(
@@ -110,12 +110,13 @@ export function AuthProvider({ children }) {
 
       navigate('/login', { replace: true });
     },
-    [navigate]
+    [navigate],
   );
 
   const value = {
     token,
     currentMember,
+    setCurrentMember,
     isInitializing,
     handleLogin,
     handleRegister,
