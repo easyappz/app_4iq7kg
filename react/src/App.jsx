@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
 import './App.css';
+import './api/authInterceptors';
 
 import HomeFeedPage from './components/pages/HomeFeedPage';
 import LoginPage from './components/Auth/LoginPage';
