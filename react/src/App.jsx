@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
 import './App.css';
 
 import HomeFeedPage from './components/pages/HomeFeedPage';
-import LoginPage from './components/pages/LoginPage';
-import RegisterPage from './components/pages/RegisterPage';
+import LoginPage from './components/Auth/LoginPage';
+import RegisterPage from './components/Auth/RegisterPage';
 import ProfilePage from './components/pages/ProfilePage';
 import UserProfilePage from './components/pages/UserProfilePage';
 import SearchPage from './components/pages/SearchPage';
@@ -13,17 +13,11 @@ import DialogsPage from './components/pages/DialogsPage';
 import SettingsPage from './components/pages/SettingsPage';
 import PrivateRoute from './components/routing/PrivateRoute';
 import PublicRoute from './components/routing/PublicRoute';
-
-function getIsAuthenticated() {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  const token = window.localStorage.getItem('authToken');
-  return Boolean(token);
-}
+import { useAuth } from './context/AuthContext';
 
 function App() {
+  const { token, currentMember, handleLogout } = useAuth();
+
   useEffect(() => {
     if (typeof window !== 'undefined' && typeof window.handleRoutes === 'function') {
       window.handleRoutes([
@@ -39,14 +33,7 @@ function App() {
     }
   }, []);
 
-  const isAuthenticated = useMemo(() => getIsAuthenticated(), []);
-
-  const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem('authToken');
-      window.location.href = '/login';
-    }
-  };
+  const isAuthenticated = Boolean(token);
 
   const renderNavLinkClassName = ({ isActive }) => {
     if (isActive) {
@@ -54,6 +41,22 @@ function App() {
     }
 
     return 'app-nav-link';
+  };
+
+  const renderCurrentMemberName = () => {
+    if (!currentMember) {
+      return 'Загрузка...';
+    }
+
+    const firstName = currentMember.first_name || '';
+    const lastName = currentMember.last_name || '';
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    if (fullName) {
+      return fullName;
+    }
+
+    return currentMember.username;
   };
 
   return (
@@ -89,17 +92,29 @@ function App() {
 
             <div className="app-header-right">
               {isAuthenticated ? (
-                <button
-                  type="button"
-                  className="app-logout-button"
-                  onClick={handleLogout}
-                >
-                  Выйти
-                </button>
+                <>
+                  <div className="app-current-user">
+                    <div className="app-current-user-avatar-placeholder" />
+                    <div className="app-current-user-text">
+                      <div className="app-current-user-name">{renderCurrentMemberName()}</div>
+                      {currentMember ? (
+                        <div className="app-current-user-username">@{currentMember.username}</div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="app-logout-button"
+                    onClick={handleLogout}
+                  >
+                    Выйти
+                  </button>
+                </>
               ) : (
                 <div className="app-auth-links">
                   <NavLink to="/login" className={renderNavLinkClassName}>
-                    Вход
+                    Войти
                   </NavLink>
                   <NavLink to="/register" className={renderNavLinkClassName}>
                     Регистрация
@@ -114,74 +129,90 @@ function App() {
           <Routes>
             <Route
               path="/login"
-              element={(
-                <PublicRoute isAuthenticated={isAuthenticated}>
-                  <LoginPage />
-                </PublicRoute>
-              )}
+              element={
+                (
+                  <PublicRoute isAuthenticated={isAuthenticated}>
+                    <LoginPage />
+                  </PublicRoute>
+                )
+              }
             />
 
             <Route
               path="/register"
-              element={(
-                <PublicRoute isAuthenticated={isAuthenticated}>
-                  <RegisterPage />
-                </PublicRoute>
-              )}
+              element={
+                (
+                  <PublicRoute isAuthenticated={isAuthenticated}>
+                    <RegisterPage />
+                  </PublicRoute>
+                )
+              }
             />
 
             <Route
               path="/"
-              element={(
-                <PrivateRoute isAuthenticated={isAuthenticated}>
-                  <HomeFeedPage />
-                </PrivateRoute>
-              )}
+              element={
+                (
+                  <PrivateRoute isAuthenticated={isAuthenticated}>
+                    <HomeFeedPage />
+                  </PrivateRoute>
+                )
+              }
             />
 
             <Route
               path="/profile"
-              element={(
-                <PrivateRoute isAuthenticated={isAuthenticated}>
-                  <ProfilePage />
-                </PrivateRoute>
-              )}
+              element={
+                (
+                  <PrivateRoute isAuthenticated={isAuthenticated}>
+                    <ProfilePage />
+                  </PrivateRoute>
+                )
+              }
             />
 
             <Route
               path="/users/:id"
-              element={(
-                <PrivateRoute isAuthenticated={isAuthenticated}>
-                  <UserProfilePage />
-                </PrivateRoute>
-              )}
+              element={
+                (
+                  <PrivateRoute isAuthenticated={isAuthenticated}>
+                    <UserProfilePage />
+                  </PrivateRoute>
+                )
+              }
             />
 
             <Route
               path="/search"
-              element={(
-                <PrivateRoute isAuthenticated={isAuthenticated}>
-                  <SearchPage />
-                </PrivateRoute>
-              )}
+              element={
+                (
+                  <PrivateRoute isAuthenticated={isAuthenticated}>
+                    <SearchPage />
+                  </PrivateRoute>
+                )
+              }
             />
 
             <Route
               path="/dialogs"
-              element={(
-                <PrivateRoute isAuthenticated={isAuthenticated}>
-                  <DialogsPage />
-                </PrivateRoute>
-              )}
+              element={
+                (
+                  <PrivateRoute isAuthenticated={isAuthenticated}>
+                    <DialogsPage />
+                  </PrivateRoute>
+                )
+              }
             />
 
             <Route
               path="/settings"
-              element={(
-                <PrivateRoute isAuthenticated={isAuthenticated}>
-                  <SettingsPage />
-                </PrivateRoute>
-              )}
+              element={
+                (
+                  <PrivateRoute isAuthenticated={isAuthenticated}>
+                    <SettingsPage />
+                  </PrivateRoute>
+                )
+              }
             />
           </Routes>
         </main>
