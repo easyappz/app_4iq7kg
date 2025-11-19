@@ -105,6 +105,207 @@ paths:
                 $ref: '#/components/schemas/MemberProfile'
         '401':
           description: Authentication credentials were not provided or are invalid.
+  /api/members/{id}/:
+    get:
+      operationId: members_retrieve
+      description: Retrieve a member profile by id.
+      tags:
+      - members
+      security:
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Member profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberProfile'
+        '404':
+          description: Member not found.
+  /api/members/me/:
+    put:
+      operationId: members_me_update
+      description: Update the current authenticated member profile.
+      tags:
+      - members
+      security:
+      - MemberTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberUpdate'
+      responses:
+        '200':
+          description: Updated member profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberProfile'
+        '400':
+          description: Validation error.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+    patch:
+      operationId: members_me_partial_update
+      description: Partially update the current authenticated member profile.
+      tags:
+      - members
+      security:
+      - MemberTokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberUpdate'
+      responses:
+        '200':
+          description: Updated member profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberProfile'
+        '400':
+          description: Validation error.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+  /api/members/search/:
+    get:
+      operationId: members_search_list
+      description: Search members by username, first name, or last name.
+      tags:
+      - members
+      security:
+      - {}
+      parameters:
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: List of members matching the search query.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MemberListItem'
+  /api/members/{id}/follow/:
+    post:
+      operationId: members_follow_create
+      description: Follow a member by id.
+      tags:
+      - subscriptions
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: false
+      responses:
+        '200':
+          description: Follow state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberFollowState'
+        '400':
+          description: Cannot follow this member.
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '404':
+          description: Member not found.
+  /api/members/{id}/unfollow/:
+    post:
+      operationId: members_unfollow_create
+      description: Unfollow a member by id.
+      tags:
+      - subscriptions
+      security:
+      - MemberTokenAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: false
+      responses:
+        '200':
+          description: Follow state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberFollowState'
+        '401':
+          description: Authentication credentials were not provided or are invalid.
+        '404':
+          description: Member not found.
+  /api/members/{id}/following/:
+    get:
+      operationId: members_following_list
+      description: List members that the given member is following.
+      tags:
+      - subscriptions
+      security:
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: List of members that the given member is following.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MemberListItem'
+        '404':
+          description: Member not found.
+  /api/members/{id}/followers/:
+    get:
+      operationId: members_followers_list
+      description: List members who follow the given member.
+      tags:
+      - subscriptions
+      security:
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: List of members who follow the given member.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MemberListItem'
+        '404':
+          description: Member not found.
 components:
   schemas:
     Message:
@@ -150,6 +351,38 @@ components:
       - username
       - first_name
       - last_name
+    MemberUpdate:
+      type: object
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        bio:
+          type: string
+        birth_date:
+          type: string
+          format: date
+          nullable: true
+        avatar:
+          type: string
+      additionalProperties: false
+    MemberListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        avatar:
+          type: string
+      required:
+      - id
+      - username
     MemberRegisterRequest:
       type: object
       properties:
@@ -201,6 +434,16 @@ components:
         detail:
           type: string
       required:
+      - detail
+    MemberFollowState:
+      type: object
+      properties:
+        following:
+          type: boolean
+        detail:
+          type: string
+      required:
+      - following
       - detail
   securitySchemes:
     basicAuth:

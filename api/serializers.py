@@ -98,6 +98,37 @@ class MemberProfileSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class MemberUpdateSerializer(serializers.ModelSerializer):
+    """Serializer used for updating the current member profile.
+
+    Allows changing basic profile fields but not username or password.
+    """
+
+    class Meta:
+        model = Member
+        fields = [
+            "first_name",
+            "last_name",
+            "bio",
+            "birth_date",
+            "avatar",
+        ]
+
+
+class MemberListSerializer(serializers.ModelSerializer):
+    """Compact serializer for listing/searching members."""
+
+    class Meta:
+        model = Member
+        fields = [
+            "id",
+            "username",
+            "first_name",
+            "last_name",
+            "avatar",
+        ]
+
+
 class AuthTokenSerializer(serializers.Serializer):
     """Combined representation of auth token and member profile."""
 
