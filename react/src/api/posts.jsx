@@ -26,6 +26,13 @@ import instance from './axios';
  * @property {number} comments_count
  */
 
+/**
+ * Build FormData payload for creating/updating posts with media attachments.
+ *
+ * Media files are appended under the "media" key so that the backend
+ * can create PostMedia objects and later return them in the `media` array
+ * of the Post response.
+ */
 function buildPostFormData(postData, files) {
   const formData = new FormData();
 
@@ -41,7 +48,7 @@ function buildPostFormData(postData, files) {
   if (files && files.length > 0) {
     files.forEach((file) => {
       if (file) {
-        formData.append('files', file);
+        formData.append('media', file);
       }
     });
   }
@@ -59,7 +66,7 @@ export function getFeed(params) {
  * Create a new post.
  *
  * If `files` is provided and non-empty, the request is sent as multipart/form-data
- * with all post fields and each File appended under the "files" key.
+ * with all post fields and each File appended under the "media" key.
  * Otherwise, a JSON body is sent as before.
  *
  * The response contains the full Post object including the `media` array
@@ -84,7 +91,7 @@ export function createPost(postData, files) {
  * Update an existing post (partial update).
  *
  * If `files` is provided and non-empty, the request is sent as multipart/form-data
- * with post fields and additional media files under the "files" key.
+ * with post fields and additional media files under the "media" key.
  * Otherwise, a JSON body is sent as before.
  *
  * The response contains the updated Post object including the `media` array.
