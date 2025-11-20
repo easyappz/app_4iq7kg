@@ -143,6 +143,7 @@ class PostMediaSerializer(serializers.ModelSerializer):
         model = PostMedia
         fields = [
             "id",
+            "post",
             "file",
             "media_type",
             "created_at",
