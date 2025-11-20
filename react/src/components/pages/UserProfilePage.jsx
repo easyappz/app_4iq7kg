@@ -252,12 +252,12 @@ function UserProfilePage() {
     }
   };
 
-  const handleUpdatePost = useCallback(async (postId, payload) => {
+  const handleUpdatePost = useCallback(async (postId, payload, files) => {
     setUpdatingPostId(postId);
     setError('');
 
     try {
-      const response = await updatePost(postId, payload);
+      const response = await updatePost(postId, payload, files);
       const updatedPost = response.data;
 
       setPosts((prev) =>

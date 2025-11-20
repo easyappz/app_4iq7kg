@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import {
   getFeed,
@@ -63,6 +63,9 @@ function HomeFeedPage() {
 
   const [newPostText, setNewPostText] = useState('');
   const [newPostImage, setNewPostImage] = useState('');
+  const [newPostFiles, setNewPostFiles] = useState([]);
+  const [newPostFilePreviews, setNewPostFilePreviews] = useState([]);
+  const newPostFileInputRef = useRef(null);
   const [isCreatingPost, setIsCreatingPost] = useState(false);
 
   const [updatingPostId, setUpdatingPostId] = useState(null);
@@ -114,6 +117,26 @@ function HomeFeedPage() {
     loadPosts(1, false);
   }, [loadPosts]);
 
+  useEffect(() => {
+    if (!newPostFiles || newPostFiles.length === 0) {
+      setNewPostFilePreviews([]);
+      return;
+    }
+
+    const nextPreviews = newPostFiles.map((file) => ({
+      file,
+      url: URL.createObjectURL(file),
+    }));
+
+    setNewPostFilePreviews(nextPreviews);
+
+    return () => {
+      nextPreviews.forEach((item) => {
+        URL.revokeObjectURL(item.url);
+      });
+    };
+  }, [newPostFiles]);
+
   const handleCreatePost = async (event) => {
     event.preventDefault();
 
@@ -136,10 +159,14 @@ function HomeFeedPage() {
         payload.image = trimmedImage;
       }
 
-      await createPost(payload);
+      await createPost(payload, newPostFiles);
 
       setNewPostText('');
       setNewPostImage('');
+      setNewPostFiles([]);
+      if (newPostFileInputRef.current) {
+        newPostFileInputRef.current.value = '';
+      }
 
       await loadPosts(1, false);
     } catch (err) {
@@ -149,12 +176,12 @@ function HomeFeedPage() {
     }
   };
 
-  const handleUpdatePost = useCallback(async (postId, payload) => {
+  const handleUpdatePost = useCallback(async (postId, payload, files) => {
     setUpdatingPostId(postId);
     setError('');
 
     try {
-      const response = await updatePost(postId, payload);
+      const response = await updatePost(postId, payload, files);
       const updatedPost = response.data;
 
       setPosts((prev) =>
@@ -275,6 +302,11 @@ function HomeFeedPage() {
     return 'Поделитесь своими мыслями с подписчиками.';
   };
 
+  const handleNewPostFilesChange = (event) => {
+    const files = Array.from(event.target.files || []);
+    setNewPostFiles(files);
+  };
+
   return (
     <div
       data-easytag="id3-react/src/components/Home/HomeFeedPage.jsx"
@@ -310,6 +342,44 @@ function HomeFeedPage() {
               value={newPostImage}
               onChange={(event) => setNewPostImage(event.target.value)}
             />
+
+            <div className="feed-create-files">
+              <label className="feed-file-input-label">
+                <span className="feed-file-input-label-text">Добавить фото/видео</span>
+                <input
+                  ref={newPostFileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*"
+                  className="feed-file-input"
+                  onChange={handleNewPostFilesChange}
+                />
+              </label>
+
+              {newPostFilePreviews.length > 0 ? (
+                <div className="feed-file-previews">
+                  {newPostFilePreviews.map((item) => (
+                    <div key={item.url} className="feed-file-preview-item">
+                      {item.file.type && item.file.type.startsWith('image/') ? (
+                        <img
+                          src={item.url}
+                          alt={item.file.name}
+                          className="feed-file-preview-image"
+                        />
+                      ) : item.file.type && item.file.type.startsWith('video/') ? (
+                        <video
+                          src={item.url}
+                          className="feed-file-preview-video"
+                          controls
+                        />
+                      ) : (
+                        <span className="feed-file-preview-name">{item.file.name}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
 
             <div className="feed-create-actions">
               <button
@@ -384,6 +454,9 @@ function PostCard({
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(post.text || '');
   const [editImage, setEditImage] = useState(post.image || '');
+  const [editFiles, setEditFiles] = useState([]);
+  const [editFilePreviews, setEditFilePreviews] = useState([]);
+  const editFileInputRef = useRef(null);
 
   const isAuthor = Boolean(
     currentMember &&
@@ -393,16 +466,46 @@ function PostCard({
       currentMember.id === post.author.id,
   );
 
+  const mediaItems = Array.isArray(post.media) ? post.media : [];
+
+  useEffect(() => {
+    if (!editFiles || editFiles.length === 0) {
+      setEditFilePreviews([]);
+      return;
+    }
+
+    const nextPreviews = editFiles.map((file) => ({
+      file,
+      url: URL.createObjectURL(file),
+    }));
+
+    setEditFilePreviews(nextPreviews);
+
+    return () => {
+      nextPreviews.forEach((item) => {
+        URL.revokeObjectURL(item.url);
+      });
+    };
+  }, [editFiles]);
+
   const handleStartEdit = () => {
     setIsEditing(true);
     setEditText(post.text || '');
     setEditImage(post.image || '');
+    setEditFiles([]);
+    if (editFileInputRef.current) {
+      editFileInputRef.current.value = '';
+    }
   };
 
   const handleCancelEdit = () => {
     setIsEditing(false);
     setEditText(post.text || '');
     setEditImage(post.image || '');
+    setEditFiles([]);
+    if (editFileInputRef.current) {
+      editFileInputRef.current.value = '';
+    }
   };
 
   const handleSaveEdit = async () => {
@@ -422,8 +525,12 @@ function PostCard({
     }
 
     try {
-      await onUpdatePost(post.id, payload);
+      await onUpdatePost(post.id, payload, editFiles);
       setIsEditing(false);
+      setEditFiles([]);
+      if (editFileInputRef.current) {
+        editFileInputRef.current.value = '';
+      }
     } catch (err) {
       // Error is handled in parent; keep editing mode on failure
     }
@@ -441,12 +548,20 @@ function PostCard({
     onToggleLike(post.id);
   };
 
+  const handleEditFilesChange = (event) => {
+    const files = Array.from(event.target.files || []);
+    setEditFiles(files);
+  };
+
   const likesCount = typeof post.likes_count === 'number' ? post.likes_count : 0;
   const commentsCount =
     typeof post.comments_count === 'number' ? post.comments_count : 0;
 
   return (
-    <article className="feed-post-card">
+    <article
+      data-easytag="id4-react/src/components/Home/HomeFeedPage.jsx"
+      className="feed-post-card"
+    >
       <header className="feed-post-header">
         <div className="feed-post-author-block">
           <div className="feed-post-avatar-placeholder" />
@@ -504,6 +619,44 @@ function PostCard({
               onChange={(event) => setEditImage(event.target.value)}
             />
 
+            <div className="feed-post-edit-files">
+              <label className="feed-file-input-label">
+                <span className="feed-file-input-label-text">Добавить фото/видео</span>
+                <input
+                  ref={editFileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*"
+                  className="feed-file-input"
+                  onChange={handleEditFilesChange}
+                />
+              </label>
+
+              {editFilePreviews.length > 0 ? (
+                <div className="feed-file-previews feed-post-edit-previews">
+                  {editFilePreviews.map((item) => (
+                    <div key={item.url} className="feed-file-preview-item">
+                      {item.file.type && item.file.type.startsWith('image/') ? (
+                        <img
+                          src={item.url}
+                          alt={item.file.name}
+                          className="feed-file-preview-image"
+                        />
+                      ) : item.file.type && item.file.type.startsWith('video/') ? (
+                        <video
+                          src={item.url}
+                          className="feed-file-preview-video"
+                          controls
+                        />
+                      ) : (
+                        <span className="feed-file-preview-name">{item.file.name}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
             <div className="feed-post-edit-actions">
               <button
                 type="button"
@@ -531,6 +684,28 @@ function PostCard({
             {post.image ? (
               <div className="feed-post-image-placeholder">
                 Изображение поста
+              </div>
+            ) : null}
+
+            {mediaItems.length > 0 ? (
+              <div className="feed-post-media">
+                {mediaItems.map((item) => (
+                  <div key={item.id} className="feed-post-media-item">
+                    {item.media_type === 'image' ? (
+                      <img
+                        src={item.file}
+                        alt="Изображение поста"
+                        className="feed-post-media-image"
+                      />
+                    ) : item.media_type === 'video' ? (
+                      <video
+                        src={item.file}
+                        className="feed-post-media-video"
+                        controls
+                      />
+                    ) : null}
+                  </div>
+                ))}
               </div>
             ) : null}
           </>
@@ -992,7 +1167,10 @@ function CommentsSection({ postId, currentMember, onCommentsCountChange }) {
   const rootComments = comments.filter((comment) => !comment.parent);
 
   return (
-    <div className="comments-section">
+    <div
+      data-easytag="id5-react/src/components/Home/HomeFeedPage.jsx"
+      className="comments-section"
+    >
       {isLoading && !isLoaded ? (
         <div className="comments-loading">Загрузка комментариев...</div>
       ) : null}
