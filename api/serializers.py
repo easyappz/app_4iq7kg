@@ -1,7 +1,7 @@
 from django.contrib.auth.hashers import check_password, make_password
 from rest_framework import serializers
 
-from .models import Comment, Dialog, Member, Message, Post
+from .models import Comment, Dialog, Member, Message, Post, PostMedia
 
 
 class HelloMessageSerializer(serializers.Serializer):
@@ -136,12 +136,27 @@ class AuthTokenSerializer(serializers.Serializer):
     member = MemberProfileSerializer()
 
 
+class PostMediaSerializer(serializers.ModelSerializer):
+    """Read-only serializer for media attachments of a post."""
+
+    class Meta:
+        model = PostMedia
+        fields = [
+            "id",
+            "file",
+            "media_type",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
 class PostSerializer(serializers.ModelSerializer):
     """Read-only serializer for posts with aggregated counters."""
 
     author = MemberListSerializer(read_only=True)
     likes_count = serializers.SerializerMethodField()
     comments_count = serializers.SerializerMethodField()
+    media = PostMediaSerializer(many=True, read_only=True)
 
     class Meta:
         model = Post
@@ -150,6 +165,7 @@ class PostSerializer(serializers.ModelSerializer):
             "author",
             "text",
             "image",
+            "media",
             "created_at",
             "updated_at",
             "likes_count",
@@ -158,6 +174,7 @@ class PostSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "author",
+            "media",
             "created_at",
             "updated_at",
             "likes_count",
@@ -302,6 +319,7 @@ class DialogSerializer(serializers.ModelSerializer):
             "last_message",
             "unread_count",
         ]
+    
         read_only_fields = fields
 
     def get_other_member(self, obj):

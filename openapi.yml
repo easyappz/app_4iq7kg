@@ -347,6 +347,21 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/PostCreateUpdate'
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                image:
+                  type: string
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+              required:
+              - text
       responses:
         '201':
           description: Created post.
@@ -400,6 +415,21 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/PostCreateUpdate'
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                image:
+                  type: string
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+              required:
+              - text
       responses:
         '200':
           description: Updated post.
@@ -434,6 +464,19 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/PostCreateUpdate'
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                image:
+                  type: string
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
       responses:
         '200':
           description: Updated post.

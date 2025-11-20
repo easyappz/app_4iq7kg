@@ -1,11 +1,12 @@
 import secrets
 
-from django.db.models import Q, Count
+from django.db import transaction
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, permissions, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -19,6 +20,7 @@ from .models import (
     Message,
     Post,
     PostLike,
+    PostMedia,
     Subscription,
 )
 from .serializers import (
@@ -37,6 +39,36 @@ from .serializers import (
     PostCreateUpdateSerializer,
     PostSerializer,
 )
+
+
+def save_post_media_from_request(post: Post, request) -> None:
+    """Create PostMedia objects from uploaded files in the request.
+
+    Expects multiple files under the "files" key in request.FILES.
+    Only image/* and video/* content types are allowed.
+    """
+
+    files = request.FILES.getlist("files")
+    if not files:
+        return
+
+    for uploaded in files:
+        content_type = (uploaded.content_type or "").lower()
+
+        if content_type.startswith("image/"):
+            media_type = PostMedia.IMAGE
+        elif content_type.startswith("video/"):
+            media_type = PostMedia.VIDEO
+        else:
+            raise ValidationError(
+                {"files": ["Допустимы только изображения и видео."]}
+            )
+
+        PostMedia.objects.create(
+            post=post,
+            file=uploaded,
+            media_type=media_type,
+        )
 
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -404,6 +436,7 @@ class PostListCreateView(generics.ListCreateAPIView):
         return (
             Post.objects.all()
             .select_related("author")
+            .prefetch_related("media")
             .annotate(
                 likes_count=Count("likes"),
                 comments_count=Count("comments"),
@@ -434,13 +467,30 @@ class PostListCreateView(generics.ListCreateAPIView):
         tags=["posts"],
     )
     def post(self, request, *args, **kwargs):  # type: ignore[override]
-        return super().post(request, *args, **kwargs)
+        return self.create(request, *args, **kwargs)
 
-    def perform_create(self, serializer):
-        author = self.request.user
+    def create(self, request, *args, **kwargs):  # type: ignore[override]
+        author = request.user
         if not isinstance(author, Member):
             raise PermissionDenied("Authenticated user is not a member.")
-        serializer.save(author=author)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            post = serializer.save(author=author)
+            save_post_media_from_request(post, request)
+
+        read_serializer = PostSerializer(
+            post,
+            context=self.get_serializer_context(),
+        )
+        headers = self.get_success_headers(read_serializer.data)
+        return Response(
+            read_serializer.data,
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
 
 
 class PostDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -453,6 +503,7 @@ class PostDetailView(generics.RetrieveUpdateDestroyAPIView):
         return (
             Post.objects.all()
             .select_related("author")
+            .prefetch_related("media")
             .annotate(
                 likes_count=Count("likes"),
                 comments_count=Count("comments"),
@@ -463,6 +514,21 @@ class PostDetailView(generics.RetrieveUpdateDestroyAPIView):
         if self.request.method in ("PUT", "PATCH"):
             return PostCreateUpdateSerializer
         return PostSerializer
+
+    def _update(self, request, partial: bool):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            post = serializer.save()
+            save_post_media_from_request(post, request)
+
+        read_serializer = PostSerializer(
+            post,
+            context=self.get_serializer_context(),
+        )
+        return Response(read_serializer.data, status=status.HTTP_200_OK)
 
     @extend_schema(
         responses={200: PostSerializer},
@@ -479,7 +545,7 @@ class PostDetailView(generics.RetrieveUpdateDestroyAPIView):
         tags=["posts"],
     )
     def put(self, request, *args, **kwargs):  # type: ignore[override]
-        return super().put(request, *args, **kwargs)
+        return self._update(request, partial=False)
 
     @extend_schema(
         request=PostCreateUpdateSerializer,
@@ -488,7 +554,7 @@ class PostDetailView(generics.RetrieveUpdateDestroyAPIView):
         tags=["posts"],
     )
     def patch(self, request, *args, **kwargs):  # type: ignore[override]
-        return super().patch(request, *args, **kwargs)
+        return self._update(request, partial=True)
 
     @extend_schema(
         responses={204: None},
@@ -511,6 +577,7 @@ class UserPostsView(generics.ListAPIView):
         return (
             Post.objects.filter(author_id=member_id)
             .select_related("author")
+            .prefetch_related("media")
             .annotate(
                 likes_count=Count("likes"),
                 comments_count=Count("comments"),
