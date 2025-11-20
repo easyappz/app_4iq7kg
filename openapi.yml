@@ -1101,6 +1101,10 @@ components:
           type: string
         image:
           type: string
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostMedia'
         created_at:
           type: string
           format: date-time
@@ -1128,6 +1132,31 @@ components:
           type: string
       required:
       - text
+    PostMedia:
+      type: object
+      properties:
+        id:
+          type: integer
+        post:
+          type: integer
+          description: Identifier of the post this media item belongs to.
+        file:
+          type: string
+          format: uri
+          description: URL of the uploaded media file.
+        media_type:
+          type: string
+          enum:
+          - image
+          - video
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - file
+      - media_type
+      - created_at
     CommentReply:
       type: object
       properties:

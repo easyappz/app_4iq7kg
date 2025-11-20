@@ -9,6 +9,7 @@ from .models import (
     Message,
     Post,
     PostLike,
+    PostMedia,
     Subscription,
 )
 
@@ -44,6 +45,13 @@ class PostAdmin(admin.ModelAdmin):
         return value
 
     short_text.short_description = "Text preview"
+
+
+@admin.register(PostMedia)
+class PostMediaAdmin(admin.ModelAdmin):
+    list_display = ("id", "post", "media_type", "file", "created_at")
+    search_fields = ("post__id", "post__author__username")
+    list_filter = ("media_type", "created_at")
 
 
 @admin.register(PostLike)

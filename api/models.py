@@ -88,6 +88,42 @@ class Post(models.Model):
         return f"Post #{self.pk} by {self.author.username}: {preview}"
 
 
+class PostMedia(models.Model):
+    """Media attachment associated with a post.
+
+    Stores uploaded image or video files belonging to a post.
+    """
+
+    IMAGE = "image"
+    VIDEO = "video"
+
+    MEDIA_TYPE_CHOICES = [
+        (IMAGE, "Image"),
+        (VIDEO, "Video"),
+    ]
+
+    post = models.ForeignKey(
+        Post,
+        related_name="media",
+        on_delete=models.CASCADE,
+    )
+    file = models.FileField(upload_to="posts/media/")
+    media_type = models.CharField(
+        max_length=10,
+        choices=MEDIA_TYPE_CHOICES,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self) -> str:
+        return (
+            f"PostMedia #{self.pk} for Post #{self.post_id} "
+            f"({self.media_type})"
+        )
+
+
 class PostLike(models.Model):
     """A like on a post by a member.
 
